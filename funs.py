@@ -389,129 +389,7 @@ def fred_newdata(fred_data, **kwargs):
     
 # forecast -----------------------------------------------------------------------------
 
-def forecast (Y,state,X,t_process,t_process2,H,**kwargs):
-    """
-    This function is used for out-of-sample prediction through "LassoCV" regression.
-    
-    Parameters
-    ----------
-    Y : dependent variable data
-    state : What is the state of the variable when you want to perform regression estimation. Is the'growth rate' or 'level'.
-    X : Independent variable data
-    t_process : the last time point of the first group of "in-sample"
-    t_process2 : the last time point of the last group of "in-sample" 
-    H : number of periods to forecast
-    
-    **kwargs
-    "kwargs['fred_data']" is the independent variable data that has been processed
-    
-    Returns
-    -------
-    coef : estimated results of regression coefficients
-    T_in_sample : Time range of in-sample in regression estimation
-    f : 
-    result_gr : Contains two columns of DF. The result of merging the true value into the predicted value, and the result of purely only the true value
-    out_mse : out-of-sample mean squared error (OOS MSE) of growth rate
-    
-    """
 
-    if t_process > X.index[-1] or t_process2 > X.index[-1]:    
-        a='Unreasonable time setting !!! The final time point of the independent variable data is '+str(X.index[-1])
-        sys.exit(a) # 退出Python程序，exit(0)表示正常退出。當參數非0時，會引發一個SystemExit異常
-        
-    # 以選定的狀態來決定是否要將變數轉為年成長率
-    if state == 'growth rate':
-        X2 = X.pct_change(12,fill_method=None) # 年成長率(故其較原X少前12期)
-        y0 = Y.pct_change(12,fill_method=None)
-        cv = 20
-    
-    elif state == 'level':
-        X2 = X
-        y0 = Y
-        cv = 30
-           
-    X1 = nrmlize(X2) #標準化資料 nrmlize 是先前定義出來的函數
-    X1 = X1.dropna(how='any',axis=0) 
-    
-    # Singular value decomposition 
-    u,s,v = svd(X1) 
-    f = np.sqrt(len(u))*u[:,:10] 
-    f = pd.DataFrame(f,index=X1.index) 
-       
-    if ('fred_data' in kwargs) == True:
-        fred_data = kwargs['fred_data']
-        fred_data = fred_data.dropna(how='any',axis=0)  
-
-        u,s,v = svd(fred_data)
-        f2 = np.sqrt(len(u))*u[:,:10] 
-        f2 = pd.DataFrame(f2,index=fred_data.index) 
-    
-        f = pd.concat([f,f2],axis=1) 
-   # -------------------------------------------------------------------------------------------------------------------------------
-    # 建立時間序列的索引，起始點是被解釋變數的資料起始時間、結束時間是所要預測結果的最後一期時間點、平率是月
-    t_start = Y.index[0]
-    duration = pd.date_range(start=t_start,end=(t_process2+rd(months=H)),freq='MS')
-    duration_len = len(duration)
-
-    # 建立月份虛擬變數(注意~時間點需設置到所有待預測的時間點才行)
-    dummy = pd.get_dummies(pd.DataFrame(np.zeros((duration_len,1)),index=duration).index.month)
-    dummy.index = pd.DataFrame(np.zeros((duration_len,1)),index=duration).index
-    dummy = dummy.iloc[:,1:] # 剔除第一列，使其作為對照組
-        
-    # 建立出預測結果要存放的空間(注意~時間點需設置到所有待預測的時間點才行)       
-    s_num = len(pd.date_range(start=t_process,end=t_process2,freq='MS')) # 計算出 in-sample 的組數
-    coef = np.zeros((s_num,H,f.shape[1])) # 待將迴歸係數放入的空間
-    pred_t = pd.DataFrame(np.zeros((duration_len,s_num)),index=duration) # 待將預測值放入的 DataFrame (可按時間做比較的結果)，之後也可以加入真實值做比較
-    T_in_sample = np.zeros((s_num,H,2),dtype=datetime) # 待將每次迴歸 in-sample 時間的起始點與終點放入放入的空間 (dtype()：資料型態 要改成可存放時間的 datetime)
-    result_gr = pd.DataFrame() # 建立一個df放可按時間做比較的結果(含預測值與真實值)
-    out_mse = np.zeros((s_num,1)) # 待放入mse的結果
-    Y = Y.rename('real')  # 不改就會是與pred_t的第一欄一樣為0
-    Y_gr = Y.pct_change(12,fill_method=None)
-    # --------- 進行預測 ---------------------------------------------------------------------------------------------------------------  
-    for tid in range(0,s_num,1):     
-        t_a = t_process+rd(months=tid) # in-sample 的最後時間點
-        t_c = t_a+rd(months=1) # out-of-sample 的起始時間點
-        t_d = t_a+rd(months=H) # out-of-sample 的最後時間點
-        
-        for h in range(1,H+1,1):
-                # 首先，創建一個完整的 YX data
-                rawYX_list = [y0,f.shift(h),dummy] 
-                rawYX = pd.concat(rawYX_list,axis=1)
-                rawYX = rawYX.dropna(how='any',axis=0) 
-                y = rawYX[t_start:t_process+rd(months=tid)].iloc[:,:1] # 相當於應變數y  
-                X3 = rawYX[t_start:t_process+rd(months=tid)].iloc[:,1:] # 相當於解釋變數x               
-                reg = LassoCV(cv=cv,alphas=np.linspace(1.5,0.001,100),fit_intercept=True,max_iter=7000,random_state=2023).fit(X3, np.array(y).flatten()) # max_iter 由1200改成7000 才不會有"ConvergenceWarning"
-               
-                # 儲存迴歸結果                  
-                t_b = t_a+rd(months=h) # out-of-sample 的每個時間點                
-                coef[tid,h-1,:] = reg.coef_[:f.shape[1]]
-                print(reg.coef_[:f.shape[1]])
-                pred_t[tid][t_b:t_b] = np.c_[f[t_a:t_a],dummy[t_b:t_b]]@reg.coef_+reg.intercept_      #all the input array dimensions for the concatenation axis must match exactly, but along dimension 0, the array at index 0 has size 1 and the array at index 1 has size 0                      
-                T_in_sample[tid,h-1,0] = rawYX.index[0]
-                T_in_sample[tid,h-1,1] = rawYX.index[-1]
-                
-        if state == 'level':
-            pred_t[tid][:t_a]=Y[:t_a] #(都尚未是成長率)將真實值合入預測值
-            pred_t[tid] = pred_t[tid][:t_d].pct_change(12,fill_method=None) #控制於'out-of-sample 的最後時間點'，否則會有多H期沒意義的結果，並影響mse估計
-            col_name = 'forecast(level)_%s' %tid
-           
-                  
-        if state == 'growth rate':
-            pred_t[tid][:t_a]=Y_gr[:t_a] #(都已是成長率)將真實值合入預測值
-            col_name = 'forecast_%s' %tid
-
-            
-        pred_t = pred_t.rename(columns={tid:col_name}) #改欄位名稱
-        for_mse = pd.concat([pred_t[col_name],Y_gr],axis=1) #水平合併
-        for_mse = for_mse.dropna(how='any',axis=0) #重點是將尾巴時間對齊 (因為'真實值的最後時間點'與'out-of-sample 的最後時間點'， 兩者長短不一定。ex.有未來預測時後者就長於前者；使用滾動式 in-sample 時，很多時候前者長於後者) 
-        try:
-            out_mse[tid] = mse(for_mse['real'][t_c:],for_mse[col_name][t_c:])                    
-        except ValueError: # 當所有預測值都沒有真實值可以對照時就會出現 ValueError
-            out_mse[tid] = np.nan
-            
-    result_gr = pd.concat([pred_t,Y_gr],axis=1) #水平合併(將真實值合入預測值)
-    
-    return [coef,T_in_sample,f,result_gr,out_mse]
 
 # -----------------------------------------------------------------------------
 
@@ -566,28 +444,143 @@ def figu_3D(coef,figu_name):
 
 # -----------------------------------------------------------------------------
 
+def forecast(Y, state, X, t_process, t_process2, H, **kwargs):
+    from scipy.linalg import block_diag as bd
+    from numpy.linalg import inv
+    """
+    This function is used for out-of-sample prediction through "LassoCV" regression.
 
-def figu_heatmap(coef,figu_name,vmin,vmax):
-    fig1, axes = plt.subplots(4,3,figsize=(36,24)) #np.size(coef,1)=12，4*3=12；figsize 用來設置圖形大小
+    Parameters
+    ----------
+    Y : dependent variable data
+    state : What is the state of the variable when you want to perform regression estimation. Is the'growth rate' or 'level'.
+    X : Independent variable data
+    t_process : the last time point of the first group of "in-sample"
+    t_process2 : the last time point of the last group of "in-sample"
+    H : number of periods to forecast
 
-    for h in range(np.size(coef,1)):
-        sns.heatmap(coef[:,h,:].T , ax=axes.flat[h],linewidths=0.05,linecolor="grey",cmap='seismic',vmin=vmin,vmax=vmax) 
-        
-        axes.flat[h].set_xlabel('In-Sample_i',fontsize=12)
-        # 先要有 ticks ， ticklabels 才能有效發會作用
-        axes.flat[h].set_xticks(np.linspace(0,np.size(coef,0),12)) # "1/2" 僅是為了讓之後的 xticklabels 能在色塊區間置中 
-        axes.flat[h].set_xticklabels(np.linspace(1,np.size(coef,0),12).astype(int), rotation=45) #astype(int) 留整數，rotation 旋轉
-        
-        axes.flat[h].set_ylabel('Beta_i',fontsize=12, rotation=360, labelpad=13)
-        axes.flat[h].set_yticks(np.arange(1/2,np.size(coef,2)+1/2,1)) # "1/2" 僅是為了讓之後的 yticklabels 能在色塊區間置中
-        axes.flat[h].set_yticklabels(np.arange(1,np.size(coef,2)+1,1), rotation=360)
-              
-        h1=h+1
-        axes.flat[h].set_title('Forecast  t + %s  period' %h1 , fontsize=14) #%後面不能直接放h+1，所以先建h1
-        
-    plt.subplots_adjust(wspace=0,hspace=0.4)   
-    plt.suptitle(figu_name, fontsize=26)
-    plt.show()    
+    **kwargs
+    "kwargs['fred_data']" is the independent variable data that has been processed
+
+    Returns
+    -------
+    coef : estimated results of regression coefficients
+    T_in_sample : Time range of in-sample in regression estimation
+    f :
+    result_gr : Contains two columns of DF. The result of merging the true value into the predicted value, and the result of purely only the true value
+    out_mse : out-of-sample mean squared error (OOS MSE) of growth rate
+
+    """
+
+    if t_process > X.index[-1] or t_process2 > X.index[-1]:
+        a = 'Unreasonable time setting !!! The final time point of the independent variable data is ' + str(
+            X.index[-1])
+        sys.exit(a)  # 退出Python程序，exit(0)表示正常退出。當參數非0時，會引發一個SystemExit異常
+
+    # 以選定的狀態來決定是否要將變數轉為年成長率
+    if state == 'growth rate':
+        X2 = X.pct_change(12, fill_method=None)  # 年成長率(故其較原X少前12期)
+        y0 = Y.pct_change(12, fill_method=None)
+        cv = 20
+
+    elif state == 'level':
+        X2 = X
+        y0 = Y
+        cv = 30
+
+    X1 = nrmlize(X2)  # 標準化資料 nrmlize 是先前定義出來的函數
+    X1 = X1.dropna(how='any', axis=0)
+
+    # Singular value decomposition
+    ux, sx, vx = svd(X1,full_matrices=False)
+    f = np.sqrt(len(ux)) * ux[:, :10]
+    f = pd.DataFrame(f, index=X1.index)
+
+    if ('fred_data' in kwargs) == True:
+        fred_data = kwargs['fred_data']
+        fred_data = fred_data.dropna(how='any', axis=0)
+        fred_data = nrmlize(fred_data)
+
+        uf, sf, vf = svd(fred_data,full_matrices=False)
+        f2 = np.sqrt(len(uf)) * uf[:, :10]
+        f2 = pd.DataFrame(f2, index=fred_data.index)
+
+        f = pd.concat([f, f2], axis=1)
+    # -------------------------------------------------------------------------------------------------------------------------------
+    # 建立時間序列的索引，起始點是被解釋變數的資料起始時間、結束時間是所要預測結果的最後一期時間點、平率是月
+    t_start = Y.index[0]
+    duration = pd.date_range(start=t_start, end=(t_process2 + rd(months=H)), freq='MS')
+    duration_len = len(duration)
+
+    # 建立月份虛擬變數(注意~時間點需設置到所有待預測的時間點才行)
+    dummy = pd.get_dummies(pd.DataFrame(np.zeros((duration_len, 1)), index=duration).index.month)
+    dummy.index = pd.DataFrame(np.zeros((duration_len, 1)), index=duration).index
+    dummy = dummy.iloc[:, 1:]  # 剔除第一列，使其作為對照組
+
+    # 建立出預測結果要存放的空間(注意~時間點需設置到所有待預測的時間點才行)
+    s_num = len(pd.date_range(start=t_process, end=t_process2, freq='MS'))  # 計算出 in-sample 的組數
+    coef = np.zeros((s_num, H, f.shape[1]))  # 待將迴歸係數放入的空間
+    if ('fred_data' in kwargs) == True:
+        x_coef = np.zeros((s_num, H, X1.shape[1]+fred_data.shape[1]))
+    else:
+        x_coef = np.zeros((s_num, H, X1.shape[1]))
+    pred_t = pd.DataFrame(np.zeros((duration_len, s_num)), index=duration)  # 待將預測值放入的 DataFrame (可按時間做比較的結果)，之後也可以加入真實值做比較
+    T_in_sample = np.zeros((s_num, H, 2), dtype=datetime)  # 待將每次迴歸 in-sample 時間的起始點與終點放入放入的空間 (dtype()：資料型態 要改成可存放時間的 datetime)
+    result_gr = pd.DataFrame()  # 建立一個df放可按時間做比較的結果(含預測值與真實值)
+    out_mse = np.zeros((s_num, 1))  # 待放入mse的結果
+    Y = Y.rename('real')  # 不改就會是與pred_t的第一欄一樣為0
+    Y_gr = Y.pct_change(12, fill_method=None)
+
+    # --------- 進行預測 ---------------------------------------------------------------------------------------------------------------
+    for tid in range(0, s_num, 1):
+        t_a = t_process + rd(months=tid)  # in-sample 的最後時間點
+        t_c = t_a + rd(months=1)  # out-of-sample 的起始時間點
+        t_d = t_a + rd(months=H)  # out-of-sample 的最後時間點
+
+        for h in range(1, H + 1, 1):
+            # 首先，創建一個完整的 YX data
+            rawYX_list = [y0, f.shift(h), dummy]
+            rawYX = pd.concat(rawYX_list, axis=1)
+            rawYX = rawYX.dropna(how='any', axis=0)
+            y = rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]  # 相當於應變數y
+            X3 = rawYX[t_start:t_process + rd(months=tid)].iloc[:, 1:]  # 相當於解釋變數x
+            reg = LassoCV(cv=cv, alphas=np.linspace(1.5, 0.001, 100), fit_intercept=True, max_iter=7000, random_state=2023).fit(X3, np.array(y).flatten())  # max_iter 由1200改成7000 才不會有"ConvergenceWarning"
+
+            # 儲存迴歸結果
+            t_b = t_a + rd(months=h)  # out-of-sample 的每個時間點
+            coef[tid, h - 1, :] = reg.coef_[:f.shape[1]]
+            if ('fred_data' in kwargs) == True:
+                x_coef[tid, h - 1, :] = bd(np.sqrt(len(ux))*vx[:10, :].T,np.sqrt(len(uf))*vf[:10, :].T) @ bd(inv(np.diag(sx[:10])),inv(np.diag(sf[:10]))) @ reg.coef_[:f.shape[1]]
+            else:
+                x_coef[tid, h - 1, :] = np.sqrt(len(ux)) * vx[:10, :].T @ inv(np.diag(sx[:10])) @ reg.coef_[:f.shape[1]]
+            pred_t[tid][t_b:t_b] = np.c_[f[t_a:t_a], dummy[t_b:t_b]] @ reg.coef_ + reg.intercept_  # all the input array dimensions for the concatenation axis must match exactly, but along dimension 0, the array at index 0 has size 1 and the array at index 1 has size 0
+            T_in_sample[tid, h - 1, 0] = rawYX.index[0]
+            T_in_sample[tid, h - 1, 1] = rawYX.index[-1]
+
+        if state == 'level':
+            pred_t[tid][:t_a] = Y[:t_a]  # (都尚未是成長率)將真實值合入預測值
+            pred_t[tid] = pred_t[tid][:t_d].pct_change(12,
+                                                       fill_method=None)  # 控制於'out-of-sample 的最後時間點'，否則會有多H期沒意義的結果，並影響mse估計
+            col_name = 'forecast(level)_%s' % tid
+
+        if state == 'growth rate':
+            pred_t[tid][:t_a] = Y_gr[:t_a]  # (都已是成長率)將真實值合入預測值
+            col_name = 'forecast_%s' % tid
+
+        pred_t = pred_t.rename(columns={tid: col_name})  # 改欄位名稱
+        for_mse = pd.concat([pred_t[col_name], Y_gr], axis=1)  # 水平合併
+        for_mse = for_mse.dropna(how='any',
+                                 axis=0)  # 重點是將尾巴時間對齊 (因為'真實值的最後時間點'與'out-of-sample 的最後時間點'， 兩者長短不一定。ex.有未來預測時後者就長於前者；使用滾動式 in-sample 時，很多時候前者長於後者)
+        try:
+            out_mse[tid] = mse(for_mse['real'][t_c:], for_mse[col_name][t_c:])
+        except ValueError:  # 當所有預測值都沒有真實值可以對照時就會出現 ValueError
+            out_mse[tid] = np.nan
+
+    result_gr = pd.concat([pred_t, Y_gr], axis=1)  # 水平合併(將真實值合入預測值)
+
+    return [coef, T_in_sample, f, result_gr, out_mse, x_coef]
+
+
 
 
 # -----------------------------------------------------------------------------
@@ -632,13 +625,25 @@ def out_mse(yf,yf_state,yr,t_process):
 
 class Get_Forecast:
     def __init__(self,key,X,fred_data,t_process_f,t_process_f_with_fred,H):  # constructor 建構子
+        # store the whole information of forecasts
+        self.X = X
+        self.fred_data = fred_data
         self.result = {}
-        self.result['forecast_without_fred_f'] = pd.concat(
-            [forecast(key, 'level', X, t_process_f, t_process_f, H)[3].iloc[:, 0].to_frame(),
-             forecast(key, 'growth rate', X, t_process_f, t_process_f, H)[3].iloc[:, :]], axis=1)
-        self.result['forecast_with_fred_f'] = pd.concat(
-            [forecast(key, 'level', X, t_process_f_with_fred,t_process_f_with_fred, H, fred_data=fred_data)[3].iloc[:,0].to_frame(),
-             forecast(key, 'growth rate', X, t_process_f_with_fred,t_process_f_with_fred, H, fred_data=fred_data)[3].iloc[:,:]], axis=1)
+        self.result['forecast_without_fred_f'] = [forecast(key, 'level', X, t_process_f, t_process_f, H),
+             forecast(key, 'growth rate', X, t_process_f, t_process_f, H)]
+        self.result['forecast_with_fred_f'] = [forecast(key, 'level', X, t_process_f_with_fred, t_process_f_with_fred, H, fred_data=fred_data),
+             forecast(key, 'growth rate', X, t_process_f_with_fred, t_process_f_with_fred, H, fred_data=fred_data)]
+        # the forecasts
+        self.forecasts = {}
+        self.forecasts['forecast_without_fred_f'] = pd.concat(
+            [self.result['forecast_without_fred_f'][0][3].iloc[:, 0].to_frame(),
+             self.result['forecast_without_fred_f'][1][3].iloc[:, :]], axis=1)
+        self.forecasts['forecast_with_fred_f'] = pd.concat(
+            [self.result['forecast_with_fred_f'][0][3].iloc[:, 0].to_frame(),
+             self.result['forecast_with_fred_f'][1][3].iloc[:, :]], axis=1)
+        self.x_coefs = {}
+        self.x_coefs['forecast_without_fred_f'] = [self.result['forecast_without_fred_f'][0][5], self.result['forecast_without_fred_f'][1][5]]
+        self.x_coefs['forecast_with_fred_f'] = [self.result['forecast_with_fred_f'][0][5], self.result['forecast_with_fred_f'][1][5]]
         self.t_process_f = t_process_f
         self.t_process_f_with_fred = t_process_f_with_fred
         self.H = H
@@ -646,22 +651,20 @@ class Get_Forecast:
     def Fig_With_RangeSlider(self,title):
         # 要繪製的時間
         #start_t = self.result['forecast_without_fred_f']['real'].index[0] + rd(months=self.H)
-        self.result['forecast_without_fred_f'] = self.result['forecast_without_fred_f'].round(3)
-        self.result['forecast_with_fred_f'] = self.result['forecast_with_fred_f'].round(3)
+        self.forecasts['forecast_without_fred_f'] = self.forecasts['forecast_without_fred_f'].round(3)
+        self.forecasts['forecast_with_fred_f'] = self.forecasts['forecast_with_fred_f'].round(3)
         # 要繪製的內容
-        result_0 = self.result['forecast_without_fred_f']['real'].dropna(how='any',axis=0)
-        result_1 = self.result['forecast_without_fred_f']['forecast(level)_0'][self.t_process_f:]
-        result_2 = self.result['forecast_without_fred_f']['forecast_0'][self.t_process_f:]
-        result_3 = self.result['forecast_with_fred_f']['forecast(level)_0'][self.t_process_f_with_fred:]
-        result_4 = self.result['forecast_with_fred_f']['forecast_0'][self.t_process_f_with_fred:]
-
+        result_0 = self.forecasts['forecast_without_fred_f']['real'].dropna(how='any',axis=0)
+        result_1 = self.forecasts['forecast_without_fred_f']['forecast(level)_0'][self.t_process_f:]
+        result_2 = self.forecasts['forecast_without_fred_f']['forecast_0'][self.t_process_f:]
+        result_3 = self.forecasts['forecast_with_fred_f']['forecast(level)_0'][self.t_process_f_with_fred:]
+        result_4 = self.forecasts['forecast_with_fred_f']['forecast_0'][self.t_process_f_with_fred:]
         # Create figure
         fig = go.Figure()
         for data, Y_name,color  in zip([result_0, result_1, result_2, result_3, result_4],
                                ['real', 'forecast(level)', 'forecast', 'forecast(level) with fred data', 'forecast with fred data'],
                                  ['dimgray', 'dodgerblue','crimson','royalblue','indianred' ]):
             fig.add_trace(go.Scatter(x=data.index, y=data, name=Y_name, line=dict(color=color, width=2)))
-
         # Set title
         fig.update_layout(
             title={
@@ -718,9 +721,64 @@ class Get_Forecast:
                     visible=True
                 ),
                 type="date",
-
             )
         )
         return fig
 
+    def figu_heatmap(coef, figu_name, vmin, vmax):
+        # This code is used for producing the time-varying coefficients based on different training windows
+        # it does not work so far! 2023/5/16
+        fig1, axes = plt.subplots(4, 3, figsize=(36, 24))  # np.size(coef,1)=12，4*3=12；figsize 用來設置圖形大小
 
+        for h in range(np.size(coef, 1)):
+            sns.heatmap(coef[:, h, :].T, ax=axes.flat[h], linewidths=0.05, linecolor="grey", cmap='seismic', vmin=vmin,
+                        vmax=vmax)
+
+            axes.flat[h].set_xlabel('In-Sample_i', fontsize=12)
+            # 先要有 ticks ， ticklabels 才能有效發會作用
+            axes.flat[h].set_xticks(np.linspace(0, np.size(coef, 0), 12))  # "1/2" 僅是為了讓之後的 xticklabels 能在色塊區間置中
+            axes.flat[h].set_xticklabels(np.linspace(1, np.size(coef, 0), 12).astype(int),
+                                         rotation=45)  # astype(int) 留整數，rotation 旋轉
+
+            axes.flat[h].set_ylabel('Beta_i', fontsize=12, rotation=360, labelpad=13)
+            axes.flat[h].set_yticks(
+                np.arange(1 / 2, np.size(coef, 2) + 1 / 2, 1))  # "1/2" 僅是為了讓之後的 yticklabels 能在色塊區間置中
+            axes.flat[h].set_yticklabels(np.arange(1, np.size(coef, 2) + 1, 1), rotation=360)
+
+            h1 = h + 1
+            axes.flat[h].set_title('Forecast  t + %s  period' % h1, fontsize=14)  # %後面不能直接放h+1，所以先建h1
+
+        plt.subplots_adjust(wspace=0, hspace=0.4)
+        plt.suptitle(figu_name, fontsize=26)
+        plt.show()
+
+    def figu_heatmap2(self, name, state, figu_name, vmin, vmax, figsize):
+        # This code is used for producing the time-varying coefficients based on different h's
+        fig1, axes = plt.subplots(1, 1, figsize=figsize)  # np.size(coef,1)=12，4*3=12；figsize 用來設置圖形大小
+        idx2 = 1
+        if state == 'level':
+            idx2 = 0
+        coef = self.x_coefs[name][idx2][0, :, :]
+        if name == 'forecast_without_fred_f':
+            coef = pd.DataFrame(coef, columns=self.X.columns)
+        else:
+            coef = pd.DataFrame(coef, columns=list(self.X.columns) + list(self.fred_data.columns))
+        sns.heatmap(coef.T, linewidths=0.05, linecolor="grey", cmap='seismic', vmin=vmin,
+                    vmax=vmax)
+        #axes.set_title('Forecast  t + %s  period' % h1, fontsize=14)  # %後面不能直接放h+1，所以先建h1
+
+        plt.subplots_adjust(wspace=0, hspace=0.4)
+        #plt.set_title(figu_name, fontsize=26)
+        plt.show()
+    def to_excel(self, name, state, result_path):
+        writer = pd.ExcelWriter(result_path + '/coeff_heatmap.xlsx', engine='openpyxl')  # 設定路徑及檔名，並指定引擎openpyxl
+        idx2 = 1
+        if state == 'level':
+            idx2 = 0
+        coef = self.x_coefs[name][idx2][0, :, :]
+        if name == 'forecast_without_fred_f':
+            coef = pd.DataFrame(coef, columns=self.X.columns)
+        else:
+            coef = pd.DataFrame(coef, columns=list(self.X.columns) + list(self.fred_data.columns))
+        coef.to_excel(writer, sheet_name=name+'_'+state)
+        writer.save()  # 存檔生成excel檔案
