@@ -471,11 +471,11 @@ def forecast(Y, state, X, t_process, t_process2, H, **kwargs):
     out_mse : out-of-sample mean squared error (OOS MSE) of growth rate
 
     """
+    # 基於django的views內已有控制這部分可刪除
+    #if t_process > X.index[-1] or t_process2 > X.index[-1]:
+        #a = 'Unreasonable time setting !!! The final time point of the independent variable data is ' + str(X.index[-1])
+        #sys.exit(a)  # 退出Python程序，exit(0)表示正常退出。當參數非0時，會引發一個SystemExit異常
 
-    if t_process > X.index[-1] or t_process2 > X.index[-1]:
-        a = 'Unreasonable time setting !!! The final time point of the independent variable data is ' + str(
-            X.index[-1])
-        sys.exit(a)  # 退出Python程序，exit(0)表示正常退出。當參數非0時，會引發一個SystemExit異常
 
     # 以選定的狀態來決定是否要將變數轉為年成長率
     if state == 'growth rate':
@@ -522,9 +522,12 @@ def forecast(Y, state, X, t_process, t_process2, H, **kwargs):
     coef = np.zeros((s_num, H, f.shape[1]))  # 待將迴歸係數放入的空間
     if ('fred_data' in kwargs) == True:
         x_coef = np.zeros((s_num, H, X1.shape[1]+fred_data.shape[1]))
+        pred2_t = np.zeros((s_num, H, X1.shape[1]+fred_data.shape[1])) # used to store the product of coefs and data
     else:
         x_coef = np.zeros((s_num, H, X1.shape[1]))
+        pred2_t = np.zeros((s_num, H, X1.shape[1]))
     pred_t = pd.DataFrame(np.zeros((duration_len, s_num)), index=duration)  # 待將預測值放入的 DataFrame (可按時間做比較的結果)，之後也可以加入真實值做比較
+    
     T_in_sample = np.zeros((s_num, H, 2), dtype=datetime)  # 待將每次迴歸 in-sample 時間的起始點與終點放入放入的空間 (dtype()：資料型態 要改成可存放時間的 datetime)
     result_gr = pd.DataFrame()  # 建立一個df放可按時間做比較的結果(含預測值與真實值)
     out_mse = np.zeros((s_num, 1))  # 待放入mse的結果
@@ -551,16 +554,17 @@ def forecast(Y, state, X, t_process, t_process2, H, **kwargs):
             coef[tid, h - 1, :] = reg.coef_[:f.shape[1]]
             if ('fred_data' in kwargs) == True:
                 x_coef[tid, h - 1, :] = bd(np.sqrt(len(ux))*vx[:10, :].T,np.sqrt(len(uf))*vf[:10, :].T) @ bd(inv(np.diag(sx[:10])),inv(np.diag(sf[:10]))) @ reg.coef_[:f.shape[1]]
+                pred2_t[tid, h-1, :] = np.c_[X1[t_a:t_a], fred_data[t_a:t_a]].flatten()* x_coef[tid, h-1, :] #+ dummy[t_b:t_b].values@reg.coef_[f.shape[1]:] + reg.intercept_
             else:
                 x_coef[tid, h - 1, :] = np.sqrt(len(ux)) * vx[:10, :].T @ inv(np.diag(sx[:10])) @ reg.coef_[:f.shape[1]]
+                pred2_t[tid, h-1, :] = X1[t_a:t_a].values.flatten()* x_coef[tid, h-1, :] #+ dummy[t_b:t_b].values@reg.coef_[f.shape[1]:] + reg.intercept_
             pred_t[tid][t_b:t_b] = np.c_[f[t_a:t_a], dummy[t_b:t_b]] @ reg.coef_ + reg.intercept_  # all the input array dimensions for the concatenation axis must match exactly, but along dimension 0, the array at index 0 has size 1 and the array at index 1 has size 0
             T_in_sample[tid, h - 1, 0] = rawYX.index[0]
             T_in_sample[tid, h - 1, 1] = rawYX.index[-1]
 
         if state == 'level':
             pred_t[tid][:t_a] = Y[:t_a]  # (都尚未是成長率)將真實值合入預測值
-            pred_t[tid] = pred_t[tid][:t_d].pct_change(12,
-                                                       fill_method=None)  # 控制於'out-of-sample 的最後時間點'，否則會有多H期沒意義的結果，並影響mse估計
+            pred_t[tid] = pred_t[tid][:t_d].pct_change(12, fill_method=None)  # 控制於'out-of-sample 的最後時間點'，否則會有多H期沒意義的結果，並影響mse估計
             col_name = 'forecast(level)_%s' % tid
 
         if state == 'growth rate':
@@ -578,7 +582,7 @@ def forecast(Y, state, X, t_process, t_process2, H, **kwargs):
 
     result_gr = pd.concat([pred_t, Y_gr], axis=1)  # 水平合併(將真實值合入預測值)
 
-    return [coef, T_in_sample, f, result_gr, out_mse, x_coef]
+    return [coef, T_in_sample, f, result_gr, out_mse, x_coef, pred2_t]
 
 
 
@@ -646,6 +650,9 @@ class Get_Forecast:
         self.x_coefs['forecast_with_fred_f'] = [self.result['forecast_with_fred_f'][0][5], self.result['forecast_with_fred_f'][1][5]]
         self.t_process_f = t_process_f
         self.t_process_f_with_fred = t_process_f_with_fred
+        self.x_cb = {}
+        self.x_cb['forecast_without_fred_f'] = [self.result['forecast_without_fred_f'][0][6], self.result['forecast_without_fred_f'][1][6]]
+        self.x_cb['forecast_with_fred_f'] = [self.result['forecast_with_fred_f'][0][6], self.result['forecast_with_fred_f'][1][6]]
         self.H = H
 
     def Fig_With_RangeSlider(self,title):
@@ -752,26 +759,44 @@ class Get_Forecast:
         plt.suptitle(figu_name, fontsize=26)
         plt.show()
 
-    def figu_heatmap2(self, name, state, figu_name, vmin, vmax, figsize):
-        # This code is used for producing the time-varying coefficients based on different h's
-        fig1, axes = plt.subplots(1, 1, figsize=figsize)  # np.size(coef,1)=12，4*3=12；figsize 用來設置圖形大小
-        idx2 = 1
-        if state == 'level':
-            idx2 = 0
-        coef = self.x_coefs[name][idx2][0, :, :]
-        if name == 'forecast_without_fred_f':
-            coef = pd.DataFrame(coef, columns=self.X.columns)
-        else:
-            coef = pd.DataFrame(coef, columns=list(self.X.columns) + list(self.fred_data.columns))
-        sns.heatmap(coef.T, linewidths=0.05, linecolor="grey", cmap='seismic', vmin=vmin,
-                    vmax=vmax)
+    def figu_heatmap2(self, name, state, figu_name, vmin, vmax, figsize, data_type):
+        if data_type == 'coef':
+            # This code is used for producing the time-varying coefficients based on different h's
+            fig1, axes = plt.subplots(1, 1, figsize=figsize)  # np.size(coef,1)=12，4*3=12；figsize 用來設置圖形大小
+            idx2 = 1
+            if state == 'level':
+                idx2 = 0
+            coef = self.x_coefs[name][idx2][0, :, :]
+            if name == 'forecast_without_fred_f':
+                coef = pd.DataFrame(coef, columns=self.X.columns)
+            else:
+                coef = pd.DataFrame(coef, columns=list(self.X.columns) + list(self.fred_data.columns))
+            sns.heatmap(coef, linewidths=0.05, linecolor="grey", cmap='seismic', vmin=vmin,
+                        vmax=vmax)
+        elif data_type == 'contribution':
+            fig1, axes = plt.subplots(1, 1, figsize=figsize)  # np.size(coef,1)=12，4*3=12；figsize 用來設置圖形大小
+            idx2 = 1
+            if state == 'level':
+                idx2 = 0
+            cb = self.x_cb[name][idx2][0, :, :]
+            if name == 'forecast_without_fred_f':
+                cb = pd.DataFrame(cb, columns=self.X.columns)
+            else:
+                cb = pd.DataFrame(cb, columns=list(self.X.columns) + list(self.fred_data.columns))
+            sns.heatmap(coef, linewidths=0.05, linecolor="grey", cmap='seismic', vmin=vmin,
+                        vmax=vmax)
+        axes.invert_yaxis()
         #axes.set_title('Forecast  t + %s  period' % h1, fontsize=14)  # %後面不能直接放h+1，所以先建h1
 
         plt.subplots_adjust(wspace=0, hspace=0.4)
         #plt.set_title(figu_name, fontsize=26)
         plt.show()
-    def to_excel(self, name, state, result_path):
-        writer = pd.ExcelWriter(result_path + '/coeff_heatmap.xlsx', engine='openpyxl')  # 設定路徑及檔名，並指定引擎openpyxl
+
+    def to_excel(self, name, state, result_path, file_name):
+        """
+        #透過 file_name 區分是進口還是出口的係數資料
+        #舉例設定:file_name = 'im_coeff_heatmap' if model==im_model else 'ex_coeff_heatmap'
+        """
         idx2 = 1
         if state == 'level':
             idx2 = 0
@@ -780,5 +805,38 @@ class Get_Forecast:
             coef = pd.DataFrame(coef, columns=self.X.columns)
         else:
             coef = pd.DataFrame(coef, columns=list(self.X.columns) + list(self.fred_data.columns))
-        coef.to_excel(writer, sheet_name=name+'_'+state)
-        writer.save()  # 存檔生成excel檔案
+        sheet_name = name + '_' + state
+        try:  # 判斷檔案是否存在(若已存在就用舊檔更新，若不存在則建新檔案，否則永遠只會覆蓋檔案，並指有一個sheet)
+            with pd.ExcelWriter(result_path + '\\' + file_name + '.xlsx', engine='openpyxl',
+                                mode='a') as writer:  # mode='a'現有檔案讀寫
+                try:  # 判斷舊檔案中，是否有相同sheet_name，有的話要先刪除，否則會有多餘的
+                    # 先刪除原來的sheet
+                    book = writer.book
+                    book.remove(book[sheet_name])  #
+                except KeyError:
+                    pass
+                # 存到指定的sheet
+                coef.to_excel(writer, sheet_name=sheet_name)
+                print('讀取舊檔案',file_name,'，更新sheet_name=', sheet_name, '之內容')
+
+        except FileNotFoundError:
+            writer = pd.ExcelWriter(result_path + '\\' + file_name + '.xlsx',
+                                    engine='openpyxl')  # 設定路徑及檔名，並指定引擎openpyxl
+
+            coef.to_excel(writer, sheet_name=sheet_name)
+            writer.save()  # 存檔生成excel檔案
+            print('不存在舊檔案，開啟新檔案',file_name,'，加入sheet_name=', sheet_name, '之內容')
+
+    """    def to_excel(self, name, state, result_path):
+            writer = pd.ExcelWriter(result_path + '/coeff_heatmap.xlsx', engine='openpyxl')  # 設定路徑及檔名，並指定引擎openpyxl
+            idx2 = 1
+            if state == 'level':
+                idx2 = 0
+            coef = self.x_coefs[name][idx2][0, :, :]
+            if name == 'forecast_without_fred_f':
+                coef = pd.DataFrame(coef, columns=self.X.columns)
+            else:
+                coef = pd.DataFrame(coef, columns=list(self.X.columns) + list(self.fred_data.columns))
+            coef.to_excel(writer, sheet_name=name+'_'+state)
+            writer.save()  # 存檔生成excel檔案
+    """
