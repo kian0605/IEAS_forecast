@@ -780,10 +780,10 @@ class Get_Forecast:
                 idx2 = 0
             cb = self.x_cb[name][idx2][0, :, :]
             if name == 'forecast_without_fred_f':
-                cb = pd.DataFrame(cb, columns=self.X.columns)
+                cb = pd.DataFrame(np.abs(cb), columns=self.X.columns)
             else:
-                cb = pd.DataFrame(cb, columns=list(self.X.columns) + list(self.fred_data.columns))
-            sns.heatmap(coef, linewidths=0.05, linecolor="grey", cmap='seismic', vmin=vmin,
+                cb = pd.DataFrame(np.abs(cb), columns=list(self.X.columns) + list(self.fred_data.columns))
+            sns.heatmap(cb, linewidths=0.05, linecolor="grey", cmap='seismic', vmin=vmin,
                         vmax=vmax)
         axes.invert_yaxis()
         #axes.set_title('Forecast  t + %s  period' % h1, fontsize=14)  # %後面不能直接放h+1，所以先建h1

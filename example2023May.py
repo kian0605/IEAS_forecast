@@ -20,7 +20,8 @@ import seaborn as sns; sns.set()
 # os 負責程序和作業系統之間的交互，可以處理大部分的文件操作
 import os 
 #os.getcwd() # 可看到當前工作路徑
-os.chdir(r'/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/code') # 更改當前工作到存放有要讀取之function的位置 (所有"\"要變"\\"才行)
+#os.chdir(r'/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/code') # 更改當前工作到存放有要讀取之function的位置 (所有"\"要變"\\"才行)
+os.chdir(r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\code')
 from funs import *
 
 
@@ -29,10 +30,10 @@ from funs import *
 today = date.today()
 #result_path = r'C:\Users\ntpu_metrics\Dropbox\RA\Janice\經濟預測\data' 
 #graph_path = r'C:\Users\ntpu_metrics\Dropbox\RA\Janice\經濟預測\graph'
-#result_path = r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\data'
-#graph_path = r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\graph'
-result_path = '/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/data'
-graph_path = '/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/graph'
+result_path = r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\data'
+graph_path = r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\graph'
+#result_path = '/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/data'
+#graph_path = '/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/graph'
 
 # 台灣總體統計資料之文件檔名稱
 URL_txt = result_path+'/tw_URL.txt'
@@ -48,6 +49,9 @@ r_ex = tw_data['進出口貿易總值(一般貿易制度)_NTD(百萬元)-出口'
 X = tw_data.drop(['進出口貿易總值(一般貿易制度)_NTD(百萬元)-進口','進出口貿易總值(一般貿易制度)_NTD(百萬元)-出口','進出口貿易總值(一般貿易制度)_USD(百萬美元)-進口','進出口貿易總值(一般貿易制度)_USD(百萬美元)-出口'],axis=1) # 將台灣資料留下解釋變數的部分
 # 以內插法處理 nan 值的部分
 X = X.interpolate() 
+pmi = pd.read_excel(r'https://www.cier.edu.tw/public/data/PMI%20%E6%AD%B7%E5%8F%B2%E8%B3%87%E6%96%99%20(%E5%AD%A3%E7%AF%80%E8%AA%BF%E6%95%B4).xlsx', index_col=[0], header=[0], skiprows=[0]).dropna(how='all')
+pmi.index = pd.date_range(pmi.index[0],pmi.index[-1],freq='MS')
+X = pd.concat([X,pmi], axis=1)
 
 # 讀入已存有的 fred 資料
 fred_data = pd.read_csv(result_path+'/fred_data.csv',index_col=0,parse_dates=True)
@@ -60,7 +64,7 @@ fred_data = fred_data.interpolate()
 # 欲預測的起始時間<表單式填寫 預測期數(H)、年份(forecast_year)、月份(forecast_month)>
 H = 12 
 forecast_year ='2023'
-forecast_month ='7'
+forecast_month ='8'
 forecast_from = datetime.strptime(forecast_year+'-'+forecast_month+'-1','%Y-%m-%d').date()
 
 # 資料最後的時間
@@ -371,21 +375,21 @@ table = pd.concat([t1,t2],axis=1)
 table.columns = ['Import','Export']
 
 print(table.to_latex())
-print(pd.concat([ex_1,ex_2,ex_3,ex_4],axis=1).resample('Q').mean().style.format('{:.2%}').to_latex())
-print(pd.concat([im_1,im_2,im_3,im_4],axis=1).resample('Q').mean().style.format('{:.2%}').to_latex())
+print(pd.concat([ex_0,ex_1,ex_2,ex_3,ex_4],axis=1).resample('Q').mean().style.format('{:.2%}').to_latex())
+print(pd.concat([im_0,im_1,im_2,im_3,im_4],axis=1).resample('Q').mean().style.format('{:.2%}').to_latex())
 
 
 # 預測目標為進口(im)
 
 ###------------- 中文字型設定
 from matplotlib.font_manager import FontProperties
-plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei'] 
+plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei']
 im_model = Get_Forecast(r_im,X,fred_data,t_process_f,t_process_f_with_fred,H)
-im_model.figu_heatmap2( 'forecast_without_fred_f','level', 'test', -5, 5,figsize=(10,30), data_type='coef')
-im_model.figu_heatmap2( 'forecast_without_fred_f','level', 'test', -5, 5,figsize=(10,30), data_type='contribution')
+im_model.figu_heatmap2( 'forecast_without_fred_f','level', 'test', -100, 100,figsize=(30,10), data_type='coef')
+im_model.figu_heatmap2( 'forecast_without_fred_f','level', 'test', -500, 500,figsize=(30,10), data_type='contribution')
 im_model.to_excel('forecast_without_fred_f','level',result_path)
 # 預測目標為出口(ex)    
 ex_model = Get_Forecast(r_ex,X,fred_data,t_process_f,t_process_f_with_fred,H)
-ex_model.figu_heatmap2( 'forecast_without_fred_f','level', 'test', -5, 5,figsize=(10,30), data_type='coef')
-ex_model.figu_heatmap2( 'forecast_without_fred_f','level', 'test', -5, 5,figsize=(10,30), data_type='contribution')
+ex_model.figu_heatmap2( 'forecast_without_fred_f','level', 'test', -100, 100,figsize=(30,10), data_type='coef')
+ex_model.figu_heatmap2( 'forecast_without_fred_f','level', 'test', -500, 500,figsize=(30,10), data_type='contribution')
 ex_model.to_excel('forecast_without_fred_f','level',result_path)
