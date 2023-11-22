@@ -95,7 +95,7 @@ def nrmlize(x):
 def date_tf(x): 
     start = '年'
     end = '月'
-    y = date(np.int(x[:x.find(start)])+1911,np.int(x[x.find(start)+len(start):x.rfind(end)]),1)
+    y = date(np.int(x[:x.find(start)])+1911,np.int32(x[x.find(start)+len(start):x.rfind(end)]),1)
     return y
 
 # 獲取並整理網站資料 -----------------------------------------------------------------------------
