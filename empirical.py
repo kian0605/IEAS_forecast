@@ -14,8 +14,7 @@ plt.rcParams['axes.unicode_minus'] = False  # 使坐標軸刻度表簽正常顯�
 import seaborn as sns;
 
 sns.set()
-%matplotlib
-inline
+
 import pickle
 import warnings
 
@@ -284,7 +283,7 @@ def forecast3(Y, state, X, t_process, t_process2, H, method, **kwargs):
         t_a = t_process + rd(months=tid)  # in-sample 的最後時間點
         t_c = t_a + rd(months=1)  # out-of-sample 的起始時間點
         t_d = t_a + rd(months=H)  # out-of-sample 的最後時間點
-
+        print(ta)
         for h in range(1, H + 1, 1):
             # 首先，創建一個完整的 YX data
             rawYX0_list = [y0, X1, dummy]
@@ -437,6 +436,7 @@ print('***the latest date of the In-sample data:***', '\nwithout Fred:', t_proce
 methods = ['Boosting', '3PRF', 'Ridge', 'LassoLars']
 result_dict = {}
 for mm in methods:
+    print(mm)
     result = forecast3(r_ex, 'level', X.dropna(axis=1), datetime(2004, 12, 1), datetime(2023, 5, 1), 12, method=mm)
     result_dict[mm] = result
 
