@@ -326,7 +326,7 @@ def forecast3(Y, state, X, t_process, t_process2, H, method, **kwargs):
                     np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX0.iloc[:, :1], axis=0).values
             if method == '3PRF':
                 ## 3PRF estimation
-                [yhat3, ahat, Avar_a, Ga, Avar_y] = threeprfCV(y, X3, 2, 50, 10, False)
+                [yhat3, ahat, Avar_a, Ga, Avar_y] = threeprfCV(y, X3, 2, 30, 10, False)
                 # 儲存迴歸結果
                 x_coef[tid, h - 1, :] = ahat[:-11, 0]  # remove the importance of seasonality
                 pred_t[tid][t_b:t_b] = np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]] @ ahat + np.mean(
@@ -434,7 +434,7 @@ print('***the latest date of the In-sample data:***', '\nwithout Fred:', t_proce
       t_process_f_with_fred)
 
 # small dataset for the largest sample size
-methods = ['Boosting', '3PRF', 'Ridge', 'LassoLars']
+methods = ['3PRF','Boosting', 'Ridge', 'LassoLars']
 result_dict = {}
 for mm in methods:
     print(mm)
