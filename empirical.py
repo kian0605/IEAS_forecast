@@ -283,7 +283,7 @@ def forecast3(Y, state, X, t_process, t_process2, H, method, **kwargs):
         t_a = t_process + rd(months=tid)  # in-sample 的最後時間點
         t_c = t_a + rd(months=1)  # out-of-sample 的起始時間點
         t_d = t_a + rd(months=H)  # out-of-sample 的最後時間點
-        print(ta)
+        print(t_a)
         for h in range(1, H + 1, 1):
             # 首先，創建一個完整的 YX data
             rawYX0_list = [y0, X1, dummy]
