@@ -438,7 +438,7 @@ methods = ['Boosting', '3PRF', 'Ridge', 'LassoLars']
 result_dict = {}
 for mm in methods:
     print(mm)
-    result = forecast3(r_ex, 'level', X.dropna(axis=1), datetime(2004, 12, 1), datetime(2023, 5, 1), 12, method=mm)
+    result = forecast3(r_ex, 'level', X.dropna(axis=1), datetime(2010, 12, 1), datetime(2023, 5, 1), 12, method=mm)
     result_dict[mm] = result
 
 with open('/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/code/empirical_result.pickle', 'wb') as f:
