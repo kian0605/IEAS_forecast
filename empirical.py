@@ -304,7 +304,7 @@ def forecast3(Y, state, X, t_process, t_process2, H, method, **kwargs):
             rawYX = pd.concat([rawYX2.iloc[:, :1], rawYX2.iloc[:, 1:-11].shift(h), rawYX2.iloc[:, -11:]], axis=1)
             rawYX = rawYX.dropna(how='any', axis=0)
 
-            y = rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]  # 相當於應變數y
+            y = rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]-np.mean(rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1])  # 相當於應變數y
             X3 = rawYX[t_start:t_process + rd(months=tid)].iloc[:, 1:]  # 相當於解釋變數x
             t_b = t_a + rd(months=h)  # out-of-sample 的每個時間點
             if method == 'Boosting':
@@ -323,26 +323,23 @@ def forecast3(Y, state, X, t_process, t_process2, H, method, **kwargs):
                 x_coef[tid, h - 1, :] = grid_search.best_estimator_.feature_importances_[
                                         :-11]  # remove the importance of seasonality
                 pred_t[tid][t_b:t_b] = grid_search.best_estimator_.predict(
-                    np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX0.iloc[:, :1], axis=0).values
+                    np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]).values
             if method == '3PRF':
                 ## 3PRF estimation
                 [yhat3, ahat, Avar_a, Ga, Avar_y] = threeprfCV(y, X3, 2, 30, 10, False)
                 # 儲存迴歸結果
                 x_coef[tid, h - 1, :] = ahat[:-11, 0]  # remove the importance of seasonality
-                pred_t[tid][t_b:t_b] = np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]] @ ahat + np.mean(
-                    rawYX0.iloc[:, :1], axis=0).values
+                pred_t[tid][t_b:t_b] = np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]] @ ahat + np.mean(rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]).values
 
             if method == 'Ridge':
                 reg = RidgeCV(cv=10, fit_intercept=True).fit(np.array(X3), np.array(y.iloc[:, 0]))
                 x_coef[tid, h - 1, :] = reg.coef_[:-11]  # remove the importance of seasonality
-                pred_t[tid][t_b:t_b] = reg.predict(np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(
-                    rawYX0.iloc[:, :1], axis=0).values
+                pred_t[tid][t_b:t_b] = reg.predict(np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]).values
 
             if method == 'LassoLars':
                 reg = LassoLarsCV(cv=10, fit_intercept=True, max_iter=20000).fit(np.array(X3), np.array(y.iloc[:, 0]))
                 x_coef[tid, h - 1, :] = reg.coef_[:-11]  # remove the importance of seasonality
-                pred_t[tid][t_b:t_b] = reg.predict(np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(
-                    rawYX0.iloc[:, :1], axis=0).values
+                pred_t[tid][t_b:t_b] = reg.predict(np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]).values
 
             T_in_sample[tid, h - 1, 0] = rawYX.index[0]
             T_in_sample[tid, h - 1, 1] = rawYX.index[-1]
@@ -434,12 +431,12 @@ print('***the latest date of the In-sample data:***', '\nwithout Fred:', t_proce
       t_process_f_with_fred)
 
 # small dataset for the largest sample size
-methods = ['3PRF','Boosting', 'Ridge', 'LassoLars']
+methods = ['Boosting', 'Ridge', 'LassoLars','3PRF']
 result_dict = {}
 for mm in methods:
     print(mm)
     result = forecast3(r_ex, 'level', X.dropna(axis=1), datetime(2010, 12, 1), datetime(2023, 5, 1), 12, method=mm)
-    result_dict[mm] = result
+    with open('/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/code/empirical_result_'+mm+'.pickle', 'wb') as f:
+        pickle.dump(result, f)
 
-with open('/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/code/empirical_result.pickle', 'wb') as f:
-    pickle.dump(result_dict, f)
+
