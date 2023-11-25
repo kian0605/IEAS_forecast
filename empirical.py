@@ -24,8 +24,8 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 import os
 
 # os.getcwd() # 可看到當前工作路徑
-os.chdir(r'/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/code')  # 更改當前工作到存放有要讀取之function的位置 (所有"\"要變"\\"才行)
-# os.chdir(r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\code')
+#os.chdir(r'/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/code')  # 更改當前工作到存放有要讀取之function的位置 (所有"\"要變"\\"才行)
+os.chdir(r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\code')
 from funs import *
 
 
@@ -272,6 +272,9 @@ def forecast3(Y, state, X, t_process, t_process2, H, method, **kwargs):
 
     pred_t = pd.DataFrame(np.zeros((duration_len, s_num)),
                           index=duration)  # 待將預測值放入的 DataFrame (可按時間做比較的結果)，之後也可以加入真實值做比較
+    predl_t = pd.DataFrame(np.zeros((duration_len, s_num)),
+                          index=duration)  # 待將預測值放入的 DataFrame (可按時間做比較的結果)，之後也可以加入真實值做比較
+
 
     T_in_sample = np.zeros((s_num, H, 2),
                            dtype=datetime)  # 待將每次迴歸 in-sample 時間的起始點與終點放入放入的空間 (dtype()：資料型態 要改成可存放時間的 datetime)
@@ -303,9 +306,9 @@ def forecast3(Y, state, X, t_process, t_process2, H, method, **kwargs):
 
             rawYX = pd.concat([rawYX2.iloc[:, :1], rawYX2.iloc[:, 1:-11].shift(h), rawYX2.iloc[:, -11:]], axis=1)
             rawYX = rawYX.dropna(how='any', axis=0)
-
-            y = rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]-np.mean(rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1])  # 相當於應變數y
-            X3 = rawYX[t_start:t_process + rd(months=tid)].iloc[:, 1:]  # 相當於解釋變數x
+            y = rawYX[rawYX.index[0]+rd(months=tid):t_process + rd(months=tid)].iloc[:, :1]-np.mean(rawYX[rawYX.index[0]+rd(months=tid):t_process + rd(months=tid)].iloc[:, :1])  # 相當於應變數y
+            print(len(y))
+            X3 = rawYX[rawYX.index[0]+rd(months=tid):t_process + rd(months=tid)].iloc[:, 1:]  # 相當於解釋變數x
             t_b = t_a + rd(months=h)  # out-of-sample 的每個時間點
             if method == 'Boosting':
                 ##  Boosting regression
@@ -323,29 +326,30 @@ def forecast3(Y, state, X, t_process, t_process2, H, method, **kwargs):
                 x_coef[tid, h - 1, :] = grid_search.best_estimator_.feature_importances_[
                                         :-11]  # remove the importance of seasonality
                 pred_t[tid][t_b:t_b] = grid_search.best_estimator_.predict(
-                    np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]).values
+                    np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX[rawYX.index[0]+rd(months=tid):t_process + rd(months=tid)].iloc[:, :1]).values
             if method == '3PRF':
                 ## 3PRF estimation
                 [yhat3, ahat, Avar_a, Ga, Avar_y] = threeprfCV(y, X3, 2, 30, 10, False)
                 # 儲存迴歸結果
                 x_coef[tid, h - 1, :] = ahat[:-11, 0]  # remove the importance of seasonality
-                pred_t[tid][t_b:t_b] = np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]] @ ahat + np.mean(rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]).values
+                pred_t[tid][t_b:t_b] = np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]] @ ahat + np.mean(rawYX[rawYX.index[0]+rd(months=tid):t_process + rd(months=tid)].iloc[:, :1]).values
 
             if method == 'Ridge':
                 reg = RidgeCV(cv=10, fit_intercept=True).fit(np.array(X3), np.array(y.iloc[:, 0]))
                 x_coef[tid, h - 1, :] = reg.coef_[:-11]  # remove the importance of seasonality
-                pred_t[tid][t_b:t_b] = reg.predict(np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]).values
+                pred_t[tid][t_b:t_b] = reg.predict(np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX[rawYX.index[0]+rd(months=tid):t_process + rd(months=tid)].iloc[:, :1]).values
 
             if method == 'LassoLars':
                 reg = LassoLarsCV(cv=10, fit_intercept=True, max_iter=20000).fit(np.array(X3), np.array(y.iloc[:, 0]))
                 x_coef[tid, h - 1, :] = reg.coef_[:-11]  # remove the importance of seasonality
-                pred_t[tid][t_b:t_b] = reg.predict(np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX[t_start:t_process + rd(months=tid)].iloc[:, :1]).values
+                pred_t[tid][t_b:t_b] = reg.predict(np.c_[rawYX2[t_a:t_a].iloc[:, 1:-11], dummy[t_b:t_b]]) + np.mean(rawYX[rawYX.index[0]+rd(months=tid):t_process + rd(months=tid)].iloc[:, :1]).values
 
             T_in_sample[tid, h - 1, 0] = rawYX.index[0]
             T_in_sample[tid, h - 1, 1] = rawYX.index[-1]
 
         if state == 'level':
             pred_t[tid][:t_a] = Y[:t_a]  # (都尚未是成長率)將真實值合入預測值
+            predl_t[tid] = pred_t[tid][:t_d]
             pred_t[tid] = pred_t[tid][:t_d].pct_change(12,
                                                        fill_method=None)  # 控制於'out-of-sample 的最後時間點'，否則會有多H期沒意義的結果，並影響mse估計
             col_name = 'forecast(level)_%s' % tid
@@ -355,6 +359,7 @@ def forecast3(Y, state, X, t_process, t_process2, H, method, **kwargs):
             col_name = 'forecast_%s' % tid
 
         pred_t = pred_t.rename(columns={tid: col_name})  # 改欄位名稱
+        predl_t = predl_t.rename(columns={tid: col_name})  # 改欄位名稱
         for_mse = pd.concat([pred_t[col_name], Y_gr], axis=1)  # 水平合併
         for_mse = for_mse.dropna(how='any',
                                  axis=0)  # 重點是將尾巴時間對齊 (因為'真實值的最後時間點'與'out-of-sample 的最後時間點'， 兩者長短不一定。ex.有未來預測時後者就長於前者；使用滾動式 in-sample 時，很多時候前者長於後者)
@@ -364,18 +369,20 @@ def forecast3(Y, state, X, t_process, t_process2, H, method, **kwargs):
             out_mse[tid] = np.nan
 
     result_gr = pd.concat([pred_t, Y_gr], axis=1)  # 水平合併(將真實值合入預測值)
+    result_level = pd.concat([predl_t, Y], axis=1)  # 水平合併(將真實值合入預測值)
 
-    return [T_in_sample, result_gr, out_mse, x_coef]
+
+    return [T_in_sample, result_gr, out_mse, x_coef, result_level]
 
 
 # 資料儲存的路徑
 today = date.today()
 # result_path = r'C:\Users\ntpu_metrics\Dropbox\RA\Janice\經濟預測\data'
 # graph_path = r'C:\Users\ntpu_metrics\Dropbox\RA\Janice\經濟預測\graph'
-# result_path = r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\data'
-# graph_path = r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\graph'
-result_path = '/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/data'
-graph_path = '/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/graph'
+result_path = r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\data'
+graph_path = r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\graph'
+# result_path = '/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/data'
+# graph_path = '/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/graph'
 
 # ---------- dealing with data
 # 台灣總體統計資料之文件檔名稱
@@ -436,7 +443,7 @@ result_dict = {}
 for mm in methods:
     print(mm)
     result = forecast3(r_ex, 'level', X.dropna(axis=1), datetime(2010, 12, 1), datetime(2023, 5, 1), 12, method=mm)
-    with open('/home/kian/Dropbox/NTPU/RA_project/RA/Janice/經濟預測/code/empirical_result_'+mm+'.pickle', 'wb') as f:
+    with open(r'C:\Users\kian_\Dropbox\NTPU\RA_project\RA\Janice\經濟預測\code\empirical_result_'+mm+'.pickle', 'wb') as f:
         pickle.dump(result, f)
 
 
